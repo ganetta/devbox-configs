@@ -1,47 +1,35 @@
-# Azure Dev Box Project
+# BI-Client – Azure Dev Box Konfiguration
 
-## Overview
-The Azure Dev Box Project is designed to provide a streamlined development environment using Azure DevOps for continuous integration and deployment. This project includes a basic setup for building and deploying applications with a focus on efficiency and scalability.
+Dieses Verzeichnis enthält die Konfigurationsdateien für die Azure Dev Box eines BI-Projekts.
 
-## Project Structure
+## Struktur
+
 ```
-azure-dev-box-project
-├── .azuredevops
-│   └── pipelines
-│       └── azure-pipelines.yml  # Azure DevOps pipeline configuration
-├── src
-│   └── main.ts                   # Main entry point of the application
-├── README.md                     # Project documentation
-└── .gitignore                    # Git ignore file
+BI-Client/
+├── imagedefinition.yaml         # Referenziert die DSC-Konfigurationen für die Dev Box
+├── bi-config.yaml               # Projektspezifische DSC-Konfiguration (Tools, Software)
 ```
 
-## Setup Instructions
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   cd azure-dev-box-project
-   ```
+## Funktionsweise
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+- **imagedefinition.yaml**  
+  Definiert das Dev Box Image und verweist auf die DSC-Konfigurationen:
+  - `common-config.dsc.yaml`: Zentrale Basiskonfiguration (z.B. Dev Drive, Git, Grundeinstellungen)
+  - `bi-config.yaml`: Projektspezifische Software und Tools für das BI-Projekt
 
-3. Configure your Azure DevOps environment as per the instructions in the `azure-pipelines.yml` file.
+- **bi-config.yaml**  
+  Installiert alle für das BI-Projekt benötigten Tools (z.B. Chrome, VS Code, Python, Azure CLI, etc.).
 
-## Usage Guidelines
-- To run the application, use the following command:
-  ```
-  npm start
-  ```
+## Nutzung
 
-- For building the project, execute:
-  ```
-  npm run build
-  ```
+1. Passe die DSC-Konfigurationsdateien nach Bedarf an.
+2. Stelle sicher, dass alle referenzierten Dateien im Repository und auf GitHub verfügbar sind.
+3. Verwende die `imagedefinition.yaml` zur Bereitstellung deiner Azure Dev Box.
 
-## Contributing
-Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.
+## Hinweise
 
-## License
-This project is licensed under the MIT License. See the LICENSE file for more details.
+- Die Installation von Git und grundlegenden Einstellungen erfolgt zentral in der `common-config.dsc.yaml`.
+- Zusätzliche projektspezifische Software wird in der `bi-config.yaml` gepflegt.
+- Die URLs in der `imagedefinition.yaml` zeigen auf die Raw-Dateien dieses Repositories.
+
+---
