@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+properties:
+  configurationVersion: 0.2.0
+  ########################################
+  ### RESOURCES: System Configuration
+  ########################################
+  resources:
+    # Clone the Git repository
+    - resource: PSDscResources/Script
+      directives:
+        description: Configure Git to use Default WAM account
+      settings:
+        SetScript: |
+          git clone --quiet https://github.com/contoso-co/eshop.git "Z:\workspaces\eshop"
+          
+        GetScript: return $false
+        TestScript: return $false
+    ########################################
+    ### Install CLIs, SDKs & Tools
+    ########################################
+    ### Install Docker Desktop
+    ### -------------------------------------
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: docker
+      directives:
+        description: Install Docker Desktop
+        allowPrerelease: true
+      settings:
+       id: Docker.DockerDesktop
+       ### Install Common Applications
+    ### -------------------------------------
+    ### Google Chrome
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: chrome
+      directives:
+        description: Install Google Chrome
+      settings:
+        id: Google.Chrome
+
+    ### Adobe Reader
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: adobereader
+      directives:
+        description: Install Adobe Acrobat Reader
+      settings:
+        id: Adobe.Acrobat.Reader.64-bit
+
+    ### Visual Studio Code
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: vscode
+      directives:
+        description: Install Visual Studio Code
+      settings:
+        id: Microsoft.VisualStudioCode
+
+    ### Notepad++
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: notepadpp
+      directives:
+        description: Install Notepad++
+      settings:
+        id: Notepad++.Notepad++
+
+    ### Azure CLI
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: azurecli
+      directives:
+        description: Install Azure CLI
+      settings:
+        id: Microsoft.AzureCLI
+
+    ### Terraform
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: terraform
+      directives:
+        description: Install Terraform
+      settings:
+        id: Hashicorp.Terraform
+
+    ### Datagrip
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: datagrip
+      directives:
+        description: Install JetBrains DataGrip
+      settings:
+        id: JetBrains.DataGrip
+
+    ### DBeaver
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: dbeaver
+      directives:
+        description: Install DBeaver
+      settings:
+        id: DBeaver.DBeaver
+
+    ### Azure Storage Explorer
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: storageexplorer
+      directives:
+        description: Install Azure Storage Explorer
+      settings:
+        id: Microsoft.AzureStorageExplorer
+
+    ### Python
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: python
+      directives:
+        description: Install Python
+      settings:
+        id: Python.Python.3
+
+    ### WSL
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: wsl
+      directives:
+        description: Install WSL
+      settings:
+        id: Canonical.WSL
