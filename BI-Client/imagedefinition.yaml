@@ -1,18 +1,13 @@
 $schema: "1.0"
 name: "BI-Client"
 image: microsoftwindowsdesktop_windows-ent-cpc_win11-24h2-ent-cpc-m365
-description: "This definition is for the BI Project engineering environment"
+description: "Definition der Dev Box für das BI-Projekt"
 
 tasks:
-  ### 
   - name: winget
     parameters:
-      downloadUrl: 'https://raw.githubusercontent.com/ganetta/devbox-configs/main/common/common-config.dsc.yaml'
-  ### Run the DSC configuration for the backend engineering environment
+      downloadUrl: "https://github.com/ganetta/devbox-configs/blob/main/BI-Client/common-config.dsc.yaml"
+
   - name: winget
     parameters:
-      downloadUrl: 'https://raw.githubusercontent.com/ganetta/devbox-configs/main/azure-dev-box-project/BI-Client/bi-config.yaml'
-#userTasks:
-#  - name: winget
-#    parameters:
-#      configurationFile: 'z:\workspaces\eshop\.configurations\backend-eng.postcreate.dsc.yaml'
+      downloadUrl: "https://github.com/ganetta/devbox-configs/blob/main/BI-Client/bi-config.yaml"
