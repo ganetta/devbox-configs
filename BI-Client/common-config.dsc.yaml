@@ -61,9 +61,9 @@ properties:
           git config --global credential.https://$domain.oauthTokenURL /oauth/token
         TestScript: |
           $domain   = "gitlab.bankfrick.li"
-          $clientId = "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f"
+          $expected = "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f"
           $id = git config --global --get credential.https://$domain.oauthClientId
-          return ($id -eq "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f")
+          return ($id -eq $expected)
         GetScript: return $false
     ### Set Swiss German locale and keyboard
     - resource: PSDscResources/Script
