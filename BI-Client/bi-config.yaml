@@ -5,32 +5,15 @@ properties:
   ### RESOURCES: System Configuration
   ########################################
   resources:
-    # Aktualisiert die WinGet-Quellen (einmal pro Tag)
+    # Clone the Git repository --> robust
     - resource: PSDscResources/Script
-      id: wingetSourceUpdate
-      directives:
-        description: Aktualisiert die WinGet-Quellen vor allen Installationen
+      id: cloneRepo
       settings:
-        SetScript: |
-          winget source reset --force
-          winget source update
         TestScript: |
-          $db = "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\source_metadata.json"
-          if (-not (Test-Path $db)) { return $false }
-          $last = (Get-Item $db).LastWriteTimeUtc
-          return ($last -gt (Get-Date).ToUniversalTime().AddHours(-24))
-        GetScript: return $false
-
-    # Clone the Git repository
-    - resource: PSDscResources/Script
-      directives:
-        description: Configure Git to use Default WAM account
-      settings:
+          return (Test-Path "Z:\workspaces\eshop\.git")
         SetScript: |
           git clone --quiet https://github.com/contoso-co/eshop.git "Z:\workspaces\eshop"
-          
         GetScript: return $false
-        TestScript: return $false
     ########################################
     ### Install CLIs, SDKs & Tools
     ########################################
@@ -107,7 +90,7 @@ properties:
       directives:
         description: Install DBeaver
       settings:
-        id: DBeaver.DBeaver
+        id: DBeaver.DBeaver.Community
 
     ### Azure Storage Explorer
     - resource: Microsoft.WinGet.DSC/WinGetPackage
@@ -115,7 +98,7 @@ properties:
       directives:
         description: Install Azure Storage Explorer
       settings:
-        id: Microsoft.AzureStorageExplorer
+        id: Microsoft.Azure.StorageExplorer
 
     ### Python
     - resource: Microsoft.WinGet.DSC/WinGetPackage
@@ -123,12 +106,19 @@ properties:
       directives:
         description: Install Python
       settings:
-        id: Python.Python.3
+        id: Python.Python.3.12
 
     ### WSL
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: wsl
+    - resource: PSDscResources/Script
+      id: enableWsl
       directives:
-        description: Install WSL
+        description: Aktiviert WSL, falls noch nicht vorhanden
       settings:
-        id: Canonical.WSL
+        TestScript: |
+          try {
+            wsl -l -q > $null 2>&1
+            return $true
+          } catch { return $false }
+        SetScript: |
+          wsl --install --no-distribution
+        GetScript: return $false
