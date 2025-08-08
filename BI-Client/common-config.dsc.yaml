@@ -55,15 +55,17 @@ properties:
         SetScript: |
           $domain   = "gitlab.bankfrick.li"
           $clientId = "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f"
-          git config --global credential.https://$domain.oauthClientId "$clientId"
-          git config --global credential.https://$domain.oauthScopes "read_repository write_repository"
-          git config --global credential.https://$domain.oauthAuthURL  /oauth/authorize
-          git config --global credential.https://$domain.oauthTokenURL /oauth/token
-        TestScript: |
-          $domain   = "gitlab.bankfrick.li"
-          $expected = "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f"
-          $id = git config --global --get credential.https://$domain.oauthClientId
-          return ($id -eq $expected)
+
+          # vorhandene (falschen) Keys löschen
+          git config --global --unset credential.https://$domain.oauthauthurl   2>$null
+          git config --global --unset credential.https://$domain.oauthtokenurl  2>$null
+
+          # korrekte Keys setzen
+          git config --global credential.https://$domain.oauthClientId  "$clientId"
+          git config --global credential.https://$domain.oauthScopes    "read_repository write_repository"
+          git config --global credential.https://$domain.oauthAuthUrl   /oauth/authorize
+          git config --global credential.https://$domain.oauthTokenUrl  /oauth/token
+        TestScript: return $false
         GetScript: return $false
     ### Set Swiss German locale and keyboard
     - resource: PSDscResources/Script
