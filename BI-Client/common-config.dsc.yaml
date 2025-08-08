@@ -5,6 +5,21 @@ properties:
   ### RESOURCES: System Configuration
   ########################################
   resources:
+    # Ensure WinGet Configuration enabled
+    - resource: PSDscResources/Script
+      id: enableWingetConfig
+      directives:
+        description: Aktiviert winget configure, wenn noch nicht freigeschaltet
+      settings:
+        TestScript: |
+          try {
+            winget configure list > $null 2>&1
+            return $true
+          } catch { return $false }
+        SetScript: |
+          winget configure --enable --accept-configuration-agreements
+        GetScript: return $false
+
     # Creates a new Dev Drive
     ### -------------------------------------
     - resource: Disk
