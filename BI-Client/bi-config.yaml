@@ -5,6 +5,22 @@ properties:
   ### RESOURCES: System Configuration
   ########################################
   resources:
+    # Aktualisiert die WinGet-Quellen (einmal pro Tag)
+    - resource: PSDscResources/Script
+      id: wingetSourceUpdate
+      directives:
+        description: Aktualisiert die WinGet-Quellen vor allen Installationen
+      settings:
+        SetScript: |
+          winget source reset --force
+          winget source update
+        TestScript: |
+          $db = "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\source_metadata.json"
+          if (-not (Test-Path $db)) { return $false }
+          $last = (Get-Item $db).LastWriteTimeUtc
+          return ($last -gt (Get-Date).ToUniversalTime().AddHours(-24))
+        GetScript: return $false
+
     # Clone the Git repository
     - resource: PSDscResources/Script
       directives:

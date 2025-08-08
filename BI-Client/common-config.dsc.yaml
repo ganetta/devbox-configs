@@ -43,3 +43,22 @@ properties:
           git config --global credential.msauthUseDefaultAccount true
         GetScript: return $false
         TestScript: return $false
+
+    ### Configure GCM for self-hosted GitLab OAuth
+    - resource: PSDscResources/Script
+      id: gitlabOauthConfig
+      dependsOn:
+        - git
+      directives:
+        description: Konfiguriert GCM für selbst-gehostetes GitLab (OAuth)
+      settings:
+        SetScript: |
+          $domain = "%gitlab.bankfrick.li"
+          $clientId = "%gitlab_oauth_client_id%"
+          git config --global credential.https://$domain.oauthClientId "$clientId"
+          git config --global credential.https://$domain.oauthScopes "read_repository write_repository"
+        TestScript: |
+          $domain = "%gitlab_domain%"
+          $id = git config --global --get credential.https://$domain.oauthClientId
+          return ($id -eq "%gitlab_oauth_client_id%")
+        GetScript: return $false
