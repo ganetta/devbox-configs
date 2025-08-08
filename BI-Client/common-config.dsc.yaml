@@ -20,7 +20,7 @@ properties:
         DevDrive: true
         AllowDestructive: true
         FSFormat: 'ReFS'
-        Size: '50Gb'
+        Size: '50GB'
     ### Install Git
     ### -------------------------------------
     - resource: Microsoft.WinGet.DSC/WinGetPackage
@@ -38,8 +38,8 @@ properties:
         description: Configure Git to use Default WAM account
       settings:
         SetScript: |
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User") 
-          SET GCM_MSAUTH_USEDEFAULTACCOUNT="true"
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          [Environment]::SetEnvironmentVariable('GCM_MSAUTH_USEDEFAULTACCOUNT','true','Machine')
           git config --global credential.msauthUseDefaultAccount true
         GetScript: return $false
         TestScript: return $false
