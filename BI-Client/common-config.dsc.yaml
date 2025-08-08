@@ -62,3 +62,22 @@ properties:
           $id = git config --global --get credential.https://$domain.oauthClientId
           return ($id -eq "%gitlab_oauth_client_id%")
         GetScript: return $false
+    ### Set Swiss German locale and keyboard
+    - resource: PSDscResources/Script
+      id: setLocaleCH
+      directives:
+        description: Stellt Schweizerdeutsch (de-CH) als Standard-Sprache, -Tastatur und -Region ein
+      settings:
+        TestScript: |
+          return ((Get-Culture).Name -eq "de-CH")
+        SetScript: |
+          $lang = "de-CH"
+          Set-WinSystemLocale -SystemLocale $lang
+          Set-Culture $lang
+          Set-WinHomeLocation -GeoId 223   # Schweiz
+          $list = New-WinUserLanguageList $lang
+          # explizit Swiss-German Keyboard 0807
+          $list[0].InputMethodTips.Clear()
+          $list[0].InputMethodTips.Add("0807:00000807")
+          Set-WinUserLanguageList $list -Force
+        GetScript: return $false
