@@ -78,8 +78,9 @@ properties:
           # korrekte Keys setzen
           git config --global credential.https://$domain.oauthClientId  "$clientId"
           git config --global credential.https://$domain.oauthScopes    "read_repository write_repository"
-          git config --global credential.https://$domain.oauthAuthUrl   /oauth/authorize
-          git config --global credential.https://$domain.oauthTokenUrl  /oauth/token
+          git config --global credential.https://$domain.oauthAuthUrl   https://$domain/oauth/authorize
+          git config --global credential.https://$domain.oauthTokenUrl  https://$domain/oauth/token
+          git config --global credential.https://$domain.oauthRedirectUrl urn:ietf:wg:oauth:2.0:oob
         TestScript: return $false
         GetScript: return $false
     ### Set Swiss German locale and keyboard
