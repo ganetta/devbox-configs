@@ -1,34 +1,39 @@
 # yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
 properties:
   configurationVersion: 0.2.0
-  ########################################
-  ### RESOURCES: System Configuration
-  ########################################
+
   resources:
-    # Clone the Git repository --> robust
+    # --- Repo klonen (robust, fällt auf C:\ zurück, wenn Z:\ noch nicht da ist; läuft nur, wenn Git vorhanden ist) ---
     - resource: PSDscResources/Script
       id: cloneRepo
       settings:
         TestScript: |
-          return (Test-Path "Z:\workspaces\eshop\.git")
+          # Bereits geklont?
+          if (Test-Path "Z:\workspaces\eshop\.git" -or Test-Path "C:\workspaces\eshop\.git") { return $true }
+          return $false
         SetScript: |
-          git clone --quiet https://github.com/contoso-co/eshop.git "Z:\workspaces\eshop"
+          $repoRoot = (Test-Path 'Z:') ? 'Z:\workspaces' : 'C:\workspaces'
+          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+            Write-Host "Git nicht gefunden; überspringe Clone in diesem Lauf."
+            return
+          }
+          if (-not (Test-Path $repoRoot)) { New-Item -ItemType Directory -Path $repoRoot -Force | Out-Null }
+          $target = Join-Path $repoRoot 'eshop'
+          if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target -Force | Out-Null }
+          if (-not (Test-Path (Join-Path $target '.git'))) {
+            git clone --quiet https://github.com/contoso-co/eshop.git $target
+          }
         GetScript: return $false
-    ########################################
-    ### Install CLIs, SDKs & Tools
-    ########################################
-    ### Install Docker Desktop
-    ### -------------------------------------
+
+    # --- Tools & Apps über WinGet ---
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: docker
       directives:
         description: Install Docker Desktop
         allowPrerelease: true
       settings:
-       id: Docker.DockerDesktop
-       ### Install Common Applications
-    ### -------------------------------------
-    ### Google Chrome
+        id: Docker.DockerDesktop
+
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: chrome
       directives:
@@ -36,7 +41,6 @@ properties:
       settings:
         id: Google.Chrome
 
-    ### Adobe Reader
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: adobereader
       directives:
@@ -44,7 +48,6 @@ properties:
       settings:
         id: Adobe.Acrobat.Reader.64-bit
 
-    ### Visual Studio Code
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: vscode
       directives:
@@ -52,7 +55,6 @@ properties:
       settings:
         id: Microsoft.VisualStudioCode
 
-    ### Notepad++
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: notepadpp
       directives:
@@ -60,7 +62,6 @@ properties:
       settings:
         id: Notepad++.Notepad++
 
-    ### Azure CLI
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: azurecli
       directives:
@@ -68,7 +69,6 @@ properties:
       settings:
         id: Microsoft.AzureCLI
 
-    ### Terraform
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: terraform
       directives:
@@ -76,7 +76,6 @@ properties:
       settings:
         id: Hashicorp.Terraform
 
-    ### Datagrip
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: datagrip
       directives:
@@ -84,7 +83,6 @@ properties:
       settings:
         id: JetBrains.DataGrip
 
-    ### DBeaver
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: dbeaver
       directives:
@@ -92,7 +90,6 @@ properties:
       settings:
         id: DBeaver.DBeaver.Community
 
-    ### Azure Storage Explorer
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: storageexplorer
       directives:
@@ -100,25 +97,25 @@ properties:
       settings:
         id: Microsoft.Azure.StorageExplorer
 
-    ### Python
+    # --- Python 3.12: maschinenweit + PATH (fix für InstallerError 3) ---
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: python
       directives:
-        description: Install Python
+        description: Install Python 3.12 (machine-wide)
       settings:
         id: Python.Python.3.12
+        scope: machine
+        override: |
+          InstallAllUsers=1 PrependPath=1 Include_test=0 Include_launcher=1
 
-    ### WSL
+    # --- WSL aktivieren (keine Distro) ---
     - resource: PSDscResources/Script
       id: enableWsl
       directives:
         description: Aktiviert WSL, falls noch nicht vorhanden
       settings:
         TestScript: |
-          try {
-            wsl -l -q > $null 2>&1
-            return $true
-          } catch { return $false }
+          try { wsl -l -q > $null 2>&1; return $true } catch { return $false }
         SetScript: |
           wsl --install --no-distribution
         GetScript: return $false

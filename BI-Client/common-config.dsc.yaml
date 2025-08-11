@@ -1,27 +1,9 @@
 # yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
 properties:
   configurationVersion: 0.2.0
-  ########################################
-  ### RESOURCES: System Configuration
-  ########################################
-  resources:
-    # Ensure WinGet Configuration enabled
-    - resource: PSDscResources/Script
-      id: enableWingetConfig
-      directives:
-        description: Aktiviert winget configure, wenn noch nicht freigeschaltet
-      settings:
-        TestScript: |
-          try {
-            winget configure list > $null 2>&1
-            return $true
-          } catch { return $false }
-        SetScript: |
-          winget configure --enable --accept-configuration-agreements
-        GetScript: return $false
 
-    # Creates a new Dev Drive
-    ### -------------------------------------
+  resources:
+    # Dev Drive anlegen
     - resource: Disk
       id: DevDrive1
       directives:
@@ -36,58 +18,72 @@ properties:
         AllowDestructive: true
         FSFormat: 'ReFS'
         Size: '50GB'
-    ### Install Git
-    ### -------------------------------------
+
+    # Git for Windows installieren
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: git
       directives:
         allowPrerelease: true
       settings:
-        id: Microsoft.Git
-    ### Configure Git to use Default WAM account
-    ### -------------------------------------
+        id: Git.Git
+
+    # GCM: Default WAM Account aktivieren (systemweit)
     - resource: PSDscResources/Script
+      id: gitUseDefaultWam
       dependsOn:
         - git
       directives:
-        description: Configure Git to use Default WAM account
+        description: Configure Git Credential Manager to use Default WAM account (system-wide)
       settings:
         SetScript: |
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          [Environment]::SetEnvironmentVariable('GCM_MSAUTH_USEDEFAULTACCOUNT','true','Machine')
-          git config --global credential.msauthUseDefaultAccount true
-        GetScript: return $false
-        TestScript: return $false
+          # PATH aus Registry neu setzen, damit Git in dieser Session verfügbar ist
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                      [System.Environment]::GetEnvironmentVariable("Path","User")
 
-    ### Configure GCM for self-hosted GitLab OAuth
+          # GCM Default Account systemweit aktivieren
+          [Environment]::SetEnvironmentVariable('GCM_MSAUTH_USEDEFAULTACCOUNT','true','Machine')
+          git config --system credential.msauthUseDefaultAccount true
+        TestScript: return $false
+        GetScript:  return $false
+
+    # GCM: OAuth für selbstgehostetes GitLab konfigurieren (systemweit)
     - resource: PSDscResources/Script
       id: gitlabOauthConfig
       dependsOn:
         - git
       directives:
-        description: Konfiguriert GCM für selbst-gehostetes GitLab (OAuth)
+        description: Konfiguriert GCM für selbst-gehostetes GitLab (OAuth) – systemweite Einstellungen
       settings:
         SetScript: |
+          # PATH aktualisieren, damit git sicher gefunden wird
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                      [System.Environment]::GetEnvironmentVariable("Path","User")
+
           $domain   = "gitlab.bankfrick.li"
           $clientId = "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f"
 
-          # vorhandene (falschen) Keys löschen
-          git config --global --unset credential.https://$domain.oauthauthurl   2>$null
-          git config --global --unset credential.https://$domain.oauthtokenurl  2>$null
+          # ggf. alte (falsche) Keys entfernen – systemweit
+          git config --system --unset credential.https://$domain.oauthauthurl   2>$null
+          git config --system --unset credential.https://$domain.oauthtokenurl  2>$null
+          git config --system --unset credential.https://$domain.oauthClientId  2>$null
+          git config --system --unset credential.https://$domain.oauthScopes    2>$null
+          git config --system --unset credential.https://$domain.oauthAuthUrl   2>$null
+          git config --system --unset credential.https://$domain.oauthTokenUrl  2>$null
+          git config --system --unset credential.https://$domain.oauthRedirectUrl 2>$null
 
-          # korrekte Keys setzen
-          git config --global credential.https://$domain.oauthClientId  "$clientId"
-          git config --global credential.https://$domain.oauthScopes    "read_repository write_repository"
-          git config --global credential.https://$domain.oauthAuthUrl   https://$domain/oauth/authorize
-          git config --global credential.https://$domain.oauthTokenUrl  https://$domain/oauth/token
-          git config --global credential.https://$domain.oauthRedirectUrl urn:ietf:wg:oauth:2.0:oob
-        TestScript: return $false
-        GetScript: return $false
-    ### Set Swiss German locale and keyboard
+          # korrekte Keys setzen – systemweit
+          git config --system credential.https://$domain.oauthClientId   "$clientId"
+          git config --system credential.https://$domain.oauthScopes     "read_repository write_repository"
+          git config --system credential.https://$domain.oauthAuthUrl    "https://$domain/oauth/authorize"
+          git config --system credential.https://$domain.oauthTokenUrl   "https://$domain/oauth/token"
+          git config --system credential.https://$domain.oauthRedirectUrl "urn:ietf:wg:oauth:2.0:oob"
+  
+
+    # Schweizerdeutsche Locale/Keyboard setzen
     - resource: PSDscResources/Script
       id: setLocaleCH
       directives:
-        description: Stellt Schweizerdeutsch (de-CH) als Standard-Sprache, -Tastatur und -Region ein
+        description: Stellt de-CH als Standard-Sprache, -Tastatur und -Region ein
       settings:
         TestScript: |
           return ((Get-Culture).Name -eq "de-CH")
