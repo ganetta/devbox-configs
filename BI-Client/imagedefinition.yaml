@@ -6,8 +6,8 @@ description: "Definition der Dev Box für das BI-Projekt"
 tasks:
   - name: winget
     parameters:
-      downloadUrl: "https://github.com/ganetta/devbox-configs/blob/main/BI-Client/common-config.dsc.yaml"
+      downloadUrl: "https://raw.githubusercontent.com/ganetta/devbox-configs/main/BI-Client/common-config.dsc.yaml"
 
   - name: winget
     parameters:
-      downloadUrl: "https://github.com/ganetta/devbox-configs/blob/main/BI-Client/bi-config.yaml"
+      downloadUrl: "https://raw.githubusercontent.com/ganetta/devbox-configs/main/BI-Client/bi-config.yaml"
