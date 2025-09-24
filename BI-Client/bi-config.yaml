@@ -9,10 +9,16 @@ properties:
       settings:
         TestScript: |
           # Bereits geklont?
-          if (Test-Path "Z:\workspaces\eshop\.git" -or Test-Path "C:\workspaces\eshop\.git") { return $true }
+          if (Test-Path "Z:\workspaces\eshop\.git") { return $true }
+          if (Test-Path "C:\workspaces\eshop\.git") { return $true }
           return $false
         SetScript: |
-          $repoRoot = (Test-Path 'Z:') ? 'Z:\workspaces' : 'C:\workspaces'
+          if (Test-Path 'Z:') {
+            $repoRoot = 'Z:\workspaces'
+          }
+          else {
+            $repoRoot = 'C:\workspaces'
+          }
           if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
             Write-Host "Git nicht gefunden; überspringe Clone in diesem Lauf."
             return
@@ -23,7 +29,12 @@ properties:
           if (-not (Test-Path (Join-Path $target '.git'))) {
             git clone --quiet https://github.com/contoso-co/eshop.git $target
           }
-        GetScript: return $false
+        GetScript: |
+          if (Test-Path "Z:\workspaces\eshop\.git" -or Test-Path "C:\workspaces\eshop\.git") {
+            return @{ Cloned = $true }
+          }
+
+          return @{ Cloned = $false }
 
     # --- Tools & Apps über WinGet ---
     - resource: Microsoft.WinGet.DSC/WinGetPackage
@@ -98,15 +109,46 @@ properties:
         id: Microsoft.Azure.StorageExplorer
 
     # --- Python 3.12: maschinenweit + PATH (fix für InstallerError 3) ---
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: python
+    - resource: PSDscResources/Script
+      id: installPython312
+      dependsOn:
+        - installWingetCli
       directives:
-        description: Install Python 3.12 (machine-wide)
+        description: Installiert Python 3.12 maschinenweit
       settings:
-        id: Python.Python.3.12
-        scope: machine
-        override: |
-          InstallAllUsers=1 PrependPath=1 Include_test=0 Include_launcher=1
+        TestScript: |
+          $python = Get-Command python.exe -ErrorAction SilentlyContinue
+          if ($null -eq $python) { return $false }
+
+          try {
+            $version = (& python --version) 2>$null
+            return $version -match '^Python 3\.12'
+          }
+          catch {
+            return $false
+          }
+
+        SetScript: |
+          $arguments = @(
+            '--id', 'Python.Python.3.12',
+            '--silent',
+            '--accept-package-agreements',
+            '--accept-source-agreements',
+            '--override', 'InstallAllUsers=1 PrependPath=1 Include_test=0 Include_launcher=1'
+          )
+
+          winget install @arguments
+        GetScript: |
+          $python = Get-Command python.exe -ErrorAction SilentlyContinue
+          if ($null -eq $python) {
+            return @{ Installed = $false }
+          }
+
+          return @{
+            Installed = $true
+            Path       = $python.Source
+            Version    = (& python --version) 2>$null
+          }
 
     # --- WSL aktivieren (keine Distro) ---
     - resource: PSDscResources/Script
@@ -115,7 +157,14 @@ properties:
         description: Aktiviert WSL, falls noch nicht vorhanden
       settings:
         TestScript: |
-          try { wsl -l -q > $null 2>&1; return $true } catch { return $false }
+          $wslState = (Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux).State
+          $vmState  = (Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State
+          return ($wslState -eq 'Enabled' -and $vmState -eq 'Enabled')
         SetScript: |
-          wsl --install --no-distribution
-        GetScript: return $false
+          Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart -All | Out-Null
+          Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -NoRestart -All | Out-Null
+        GetScript: |
+          return @{
+            WslFeatureState = (Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux).State
+            VmPlatformState = (Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State
+          }

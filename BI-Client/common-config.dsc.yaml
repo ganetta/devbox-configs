@@ -19,6 +19,30 @@ properties:
         FSFormat: 'ReFS'
         Size: '50GB'
 
+    # WinGet CLI (App Installer) sicherstellen
+    - resource: PSDscResources/Script
+      id: installWingetCli
+      directives:
+        description: Installiert bzw. aktualisiert App Installer (liefert winget.exe)
+      settings:
+        TestScript: |
+          $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -AllUsers -ErrorAction SilentlyContinue
+          if ($null -eq $package) { return $false }
+
+          $wingetPath = Join-Path $env:LocalAppData "Microsoft\WindowsApps\winget.exe"
+          return (Test-Path $wingetPath)
+        SetScript: |
+          $wingetUri = 'https://aka.ms/getwinget'
+          $download  = Join-Path $env:TEMP 'AppInstaller.msixbundle'
+
+          Invoke-WebRequest -Uri $wingetUri -OutFile $download -UseBasicParsing
+          Add-AppxPackage -Path $download -ForceApplicationShutdown
+        GetScript: |
+          $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -AllUsers -ErrorAction SilentlyContinue
+          return @{
+            Package = $package
+          }
+
     # Git for Windows installieren
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: git
@@ -43,8 +67,24 @@ properties:
           # GCM Default Account systemweit aktivieren
           [Environment]::SetEnvironmentVariable('GCM_MSAUTH_USEDEFAULTACCOUNT','true','Machine')
           git config --system credential.msauthUseDefaultAccount true
-        TestScript: return $false
-        GetScript:  return $false
+        TestScript: |
+          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+            return $false
+          }
+
+          $envValue  = [Environment]::GetEnvironmentVariable('GCM_MSAUTH_USEDEFAULTACCOUNT','Machine')
+          $gitConfig = git config --system --get credential.msauthUseDefaultAccount 2>$null
+          return ($envValue -eq 'true' -and $gitConfig -eq 'true')
+        GetScript: |
+          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+            return @{ Installed = $false }
+          }
+
+          return @{
+            Installed = $true
+            MachineVariable = [Environment]::GetEnvironmentVariable('GCM_MSAUTH_USEDEFAULTACCOUNT','Machine')
+            GitConfigValue  = git config --system --get credential.msauthUseDefaultAccount 2>$null
+          }
 
     # GCM: OAuth für selbstgehostetes GitLab konfigurieren (systemweit)
     - resource: PSDscResources/Script
@@ -77,7 +117,40 @@ properties:
           git config --system credential.https://$domain.oauthAuthUrl    "https://$domain/oauth/authorize"
           git config --system credential.https://$domain.oauthTokenUrl   "https://$domain/oauth/token"
           git config --system credential.https://$domain.oauthRedirectUrl "urn:ietf:wg:oauth:2.0:oob"
-  
+        TestScript: |
+          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+            return $false
+          }
+
+          $domain   = "gitlab.bankfrick.li"
+          $clientId = "e60e535167320bdced2f21e75f9330bf30de8a7c8b10b1c9be0f49ca23902b7f"
+          $scopes   = "read_repository write_repository"
+          $authUrl  = "https://$domain/oauth/authorize"
+          $tokenUrl = "https://$domain/oauth/token"
+          $redirect = "urn:ietf:wg:oauth:2.0:oob"
+
+          $clientConfigured = (git config --system --get credential.https://$domain.oauthClientId 2>$null) -eq $clientId
+          $scopesConfigured = (git config --system --get credential.https://$domain.oauthScopes 2>$null) -eq $scopes
+          $authConfigured   = (git config --system --get credential.https://$domain.oauthAuthUrl 2>$null) -eq $authUrl
+          $tokenConfigured  = (git config --system --get credential.https://$domain.oauthTokenUrl 2>$null) -eq $tokenUrl
+          $redirectConfig   = (git config --system --get credential.https://$domain.oauthRedirectUrl 2>$null) -eq $redirect
+
+          return ($clientConfigured -and $scopesConfigured -and $authConfigured -and $tokenConfigured -and $redirectConfig)
+        GetScript: |
+          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+            return @{ GitAvailable = $false }
+          }
+
+          $domain = "gitlab.bankfrick.li"
+
+          return @{
+            GitAvailable = $true
+            ClientId     = git config --system --get credential.https://$domain.oauthClientId 2>$null
+            Scopes       = git config --system --get credential.https://$domain.oauthScopes 2>$null
+            AuthUrl      = git config --system --get credential.https://$domain.oauthAuthUrl 2>$null
+            TokenUrl     = git config --system --get credential.https://$domain.oauthTokenUrl 2>$null
+            RedirectUrl  = git config --system --get credential.https://$domain.oauthRedirectUrl 2>$null
+          }
 
     # Schweizerdeutsche Locale/Keyboard setzen
     - resource: PSDscResources/Script
@@ -97,4 +170,10 @@ properties:
           $list[0].InputMethodTips.Clear()
           $list[0].InputMethodTips.Add("0807:00000807")
           Set-WinUserLanguageList $list -Force
-        GetScript: return $false
+        GetScript: |
+          return @{
+            Culture          = (Get-Culture).Name
+            SystemLocale     = (Get-WinSystemLocale).Name
+            HomeLocationGeo  = (Get-WinHomeLocation).GeoId
+            KeyboardLayouts  = (Get-WinUserLanguageList).InputMethodTips
+          }
