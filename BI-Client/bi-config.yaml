@@ -103,14 +103,6 @@ properties:
         source: winget
 
     - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: dbeaver
-      directives:
-        description: Install DBeaver
-      settings:
-        id: DBeaver.DBeaver.Community
-        source: winget
-
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: storageexplorer
       directives:
         description: Install Azure Storage Explorer
@@ -165,6 +157,38 @@ properties:
           }
           catch {
             return @{ Installed = $false }
+          }
+
+    # --- DBeaver Community über Offline-Installer ---
+    - resource: PSDscResources/Script
+      id: installDBeaver
+      directives:
+        description: Installiert DBeaver Community Edition (silent)
+      settings:
+        TestScript: |
+          $exe = Get-Command 'C:\Program Files\DBeaver\dbeaver.exe' -ErrorAction SilentlyContinue
+          return [bool]$exe
+        SetScript: |
+          $url       = 'https://dbeaver.io/files/dbeaver-ce-latest-x86_64-setup.exe'
+          $installer = Join-Path $env:TEMP 'dbeaver-setup.exe'
+
+          if (-not (Test-Path $installer)) {
+            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+          }
+
+          if (-not (Test-Path $installer)) {
+            throw "DBeaver-Installer wurde nicht erfolgreich heruntergeladen."
+          }
+
+          $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            throw "DBeaver-Installation schlug fehl (ExitCode: $($process.ExitCode))."
+          }
+        GetScript: |
+          $exe = Get-Command 'C:\Program Files\DBeaver\dbeaver.exe' -ErrorAction SilentlyContinue
+          return @{
+            Installed = [bool]$exe
+            Path       = if ($exe) { $exe.Source } else { $null }
           }
 
     # --- WSL-Features aktivieren ---
