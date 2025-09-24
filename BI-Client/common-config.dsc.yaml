@@ -13,6 +13,179 @@ properties:
         id: Git.Git
         source: winget
 
+    # Winget (App Installer) provisioning inkl. Abhängigkeiten sicherstellen
+    - resource: PSDscResources/Script
+      id: ensureWingetProvisioned
+      directives:
+        description: Provisioniert App Installer und Abhängigkeiten für zukünftige Benutzer
+      settings:
+        TestScript: |
+          $pkg = Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue
+          return ($null -ne $pkg)
+        SetScript: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+          $base = 'C:\ProgramData\WingetDeploy'
+          $pkgs = Join-Path $base 'Pkgs'
+          $logs = Join-Path $base 'Logs'
+          New-Item -Force -ItemType Directory -Path $pkgs,$logs | Out-Null
+          $log  = Join-Path $logs ("Install-Winget-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".log")
+          Write-Host "[Start] WinGet provisioning – Log: $log"
+
+          function Download-Bits($Url,$Out){
+            if (Test-Path $Out) { Remove-Item $Out -Force }
+            Write-Host "[Download] $Url"
+            Start-BitsTransfer -Source $Url -Destination $Out
+            if (!(Test-Path $Out) -or (Get-Item $Out).Length -lt 10240) { throw "Download failed/too small: $Url" }
+          }
+          function Test-PE($Path){
+            if (!(Test-Path $Path)) { return $false }
+            $bytes=[System.IO.File]::ReadAllBytes($Path)[0..1]
+            (-join ($bytes | ForEach-Object{[char]$_})) -eq 'MZ'
+          }
+          function Test-PK($Path){
+            if (!(Test-Path $Path)) { return $false }
+            $fs=[System.IO.File]::OpenRead($Path)
+            try{
+              $bytes=New-Object byte[] 2
+              [void]$fs.Read($bytes,0,2)
+              (-join ($bytes|ForEach-Object{[char]$_})) -eq 'PK'
+            } finally {
+              $fs.Dispose()
+            }
+          }
+
+          $urlAppInstaller = 'https://aka.ms/getwinget'
+          $urlVCLibs       = 'https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx'
+          $warInstallerUrls = @(
+            'https://aka.ms/windowsappsdk/1.8/1.8.250916003/windowsappruntimeinstall-x64.exe',
+            'https://aka.ms/windowsappsdk/1.8/1.8.250907003/windowsappruntimeinstall-x64.exe',
+            'https://aka.ms/windowsappsdk/1.7/1.7.250909003/windowsappruntimeinstall-x64.exe'
+          )
+
+          $fileAppInstaller = Join-Path $pkgs 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
+          $fileVCLibs       = Join-Path $pkgs 'Microsoft.VCLibs.140.00.UWPDesktop.x64.appx'
+
+          Download-Bits $urlAppInstaller $fileAppInstaller
+          if (!(Test-PK $fileAppInstaller)) { throw "App Installer ist beschädigt (kein PK Header)." }
+          Download-Bits $urlVCLibs $fileVCLibs
+          if (!(Test-PK $fileVClibs)) { throw "VCLibs ist beschädigt (kein PK Header)." }
+
+          $warOk = $false
+          $warExe = Join-Path $pkgs 'windowsappruntimeinstall-x64.exe'
+          foreach($u in $warInstallerUrls){
+            try{
+              Download-Bits $u $warExe
+              if (Test-PE $warExe){
+                Write-Host "[Install] Windows App Runtime via installer"
+                $proc = Start-Process -FilePath $warExe -ArgumentList '--quiet','--force' -Wait -PassThru
+                Write-Host ("Windows App Runtime exit: {0}" -f $proc.ExitCode)
+                if ($proc.ExitCode -eq 0){ $warOk = $true; break }
+              } else {
+                Write-Host "[Info] Download ist kein EXE – nächster Versuch"
+              }
+            } catch {
+              Write-Host "[Info] Fehler bei $u : $($_.Exception.Message)"
+            }
+          }
+          if (-not $warOk) { throw "Windows App Runtime konnte nicht installiert werden." }
+
+          Write-Host "[Provision] App Installer + VCLibs"
+          Add-AppxProvisionedPackage -Online -PackagePath $fileAppInstaller -DependencyPackagePath $fileVCLibs -SkipLicense | Out-Null
+
+          $windowsApps = Join-Path $env:ProgramFiles 'WindowsApps'
+          $ai = Get-ChildItem $windowsApps -Directory -Filter 'Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+          $vc = Get-ChildItem $windowsApps -Directory -Filter 'Microsoft.VCLibs.140.00.UWPDesktop_*_x64__8wekyb3d8bbwe' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+
+          if ($ai) {
+            $mp=[Environment]::GetEnvironmentVariable('Path','Machine')
+            foreach($p in @($ai.FullName, ($vc?.FullName))){
+              if ($p -and (Test-Path $p) -and ($mp.Split(';') -notcontains $p)){
+                $mp=$mp.TrimEnd(';')+';'+$p
+                Write-Host "[PATH] Added: $p"
+              }
+            }
+            [Environment]::SetEnvironmentVariable('Path',$mp,'Machine')
+            $manifest=Join-Path $ai.FullName 'AppxManifest.xml'
+            if (Test-Path $manifest){
+              try{
+                Add-AppxPackage -Register $manifest -DisableDevelopmentMode -ErrorAction Stop | Out-Null
+                Write-Host "[Register] App Installer registered for current session"
+              } catch {
+                Write-Host "[Register] Hinweis: $($_.Exception.Message)"
+              }
+            }
+          }
+
+          try{
+            $cmd = Get-Command winget -ErrorAction SilentlyContinue
+            if ($cmd) {
+              Write-Host "[OK] winget verfügbar (SYSTEM)"
+            } else {
+              Write-Host "[Info] winget provisioned; wird nach Neustart/Login verfügbar"
+            }
+          } catch {
+            Write-Host "[Info] winget provisioned; wird nach Neustart/Login verfügbar"
+          }
+        GetScript: |
+          $prov = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' }
+          $pkg  = Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue
+          return @{
+            Provisioned = [bool]$prov
+            Registered  = [bool]$pkg
+          }
+
+    # Teams WebRTC Redirector & VC++ Runtimes installieren (für VDI-Optimierung)
+    - resource: PSDscResources/Script
+      id: installTeamsWebRtcRedirector
+      directives:
+        description: Installiert VC++ Runtimes und den Teams WebRTC Redirector Service
+      settings:
+        TestScript: |
+          try {
+            $svc = Get-Service -Name 'RdpWebSocketSvc' -ErrorAction Stop
+            return $true
+          }
+          catch {
+            return $false
+          }
+        SetScript: |
+          $temp = Join-Path $env:TEMP 'TeamsVDI'
+          if (-not (Test-Path $temp)) { New-Item -ItemType Directory -Path $temp -Force | Out-Null }
+
+          New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Teams' -Force | Out-Null
+          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Teams' -Name 'IsWVDEnvironment' -Value 1 -PropertyType DWord -Force | Out-Null
+
+          $vcx64Url  = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+          $vcx64Path = Join-Path $temp 'vc_redist.x64.exe'
+          Invoke-WebRequest -Uri $vcx64Url -OutFile $vcx64Path -UseBasicParsing
+          Start-Process -FilePath $vcx64Path -ArgumentList '/install /quiet /norestart' -Wait | Out-Null
+
+          $vcx86Url  = 'https://aka.ms/vs/17/release/vc_redist.x86.exe'
+          $vcx86Path = Join-Path $temp 'vc_redist.x86.exe'
+          Invoke-WebRequest -Uri $vcx86Url -OutFile $vcx86Path -UseBasicParsing
+          Start-Process -FilePath $vcx86Path -ArgumentList '/install /quiet /norestart' -Wait | Out-Null
+
+          $redirectorUrl  = 'https://aka.ms/msrdcwebrtcsvc/msi'
+          $redirectorPath = Join-Path $temp 'WebRTCRedirector.msi'
+          Invoke-WebRequest -Uri $redirectorUrl -OutFile $redirectorPath -UseBasicParsing
+
+          $redirectArgs = '/i "{0}" /qn /norestart' -f $redirectorPath
+          $process      = Start-Process -FilePath 'msiexec.exe' -ArgumentList $redirectArgs -Wait -PassThru -WindowStyle Hidden
+
+          if ($process.ExitCode -ne 0) {
+            throw "WebRTC Redirector Installation schlug fehl (ExitCode: $($process.ExitCode))."
+          }
+        GetScript: |
+          try {
+            $svc = Get-Service -Name 'RdpWebSocketSvc' -ErrorAction Stop
+            return @{ Service = $svc.Status }
+          }
+          catch {
+            return @{ Service = 'NotInstalled' }
+          }
+
     # GCM: Default WAM Account aktivieren (systemweit)
     - resource: PSDscResources/Script
       id: gitUseDefaultWam

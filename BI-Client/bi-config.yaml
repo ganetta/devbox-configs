@@ -169,21 +169,30 @@ properties:
           $exe = Get-Command 'C:\Program Files\DBeaver\dbeaver.exe' -ErrorAction SilentlyContinue
           return [bool]$exe
         SetScript: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+          $temp      = Join-Path $env:TEMP 'DBeaverSetup'
+          if (-not (Test-Path $temp)) { New-Item -ItemType Directory -Path $temp -Force | Out-Null }
+
+          $installer = Join-Path $temp 'dbeaver-setup.exe'
           $url       = 'https://dbeaver.io/files/dbeaver-ce-latest-x86_64-setup.exe'
-          $installer = Join-Path $env:TEMP 'dbeaver-setup.exe'
+
+          if (Test-Path $installer) { Remove-Item $installer -Force }
+          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
 
           if (-not (Test-Path $installer)) {
-            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+            throw "DBeaver-Installer konnte nicht heruntergeladen werden."
           }
 
-          if (-not (Test-Path $installer)) {
-            throw "DBeaver-Installer wurde nicht erfolgreich heruntergeladen."
+          $size = (Get-Item $installer).Length
+          if ($size -lt 1048576) {
+            throw "DBeaver-Installer ist zu klein/ungültig (Größe: $size Bytes)."
           }
 
-          $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru -WindowStyle Hidden
-          if ($process.ExitCode -ne 0) {
-            throw "DBeaver-Installation schlug fehl (ExitCode: $($process.ExitCode))."
-          }
+          
+          $arguments  = @('/S','/allusers')
+          $process    = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
         GetScript: |
           $exe = Get-Command 'C:\Program Files\DBeaver\dbeaver.exe' -ErrorAction SilentlyContinue
           return @{
@@ -191,59 +200,43 @@ properties:
             Path       = if ($exe) { $exe.Source } else { $null }
           }
 
-    # --- WSL-Features aktivieren ---
-    - resource: PSDesiredStateConfiguration/WindowsOptionalFeature
-      id: enableWslFeature
-      directives:
-        description: Aktiviert das Windows-Subsystem für Linux
-      settings:
-        Name: Microsoft-Windows-Subsystem-Linux
-        Ensure: Present
-        NoRestart: true
-
-    - resource: PSDesiredStateConfiguration/WindowsOptionalFeature
-      id: enableVmPlatformFeature
-      directives:
-        description: Aktiviert die Virtual Machine Platform (für WSL 2)
-      settings:
-        Name: VirtualMachinePlatform
-        Ensure: Present
-        NoRestart: true
-
-    # --- WSL-Kernel aktualisieren ---
+    # --- WSL installieren ---
     - resource: PSDscResources/Script
-      id: installWslKernelUpdate
-      dependsOn:
-        - enableWslFeature
-        - enableVmPlatformFeature
+      id: installWsl
       directives:
-        description: Installiert das aktuelle WSL-Kernel-Update (x64)
+        description: Installiert WSL (Subsystem + Kernel) über wsl --install
       settings:
         TestScript: |
           try {
-            $status = (& wsl --status) 2>$null
-            return ($status -match 'Kernel version')
+            $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+            $vmFeature  = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+            if ($wslFeature.State -ne 'Enabled' -or $vmFeature.State -ne 'Enabled') {
+              return $false
+            }
+
+            $process = Start-Process -FilePath 'wsl.exe' -ArgumentList '--status' -Wait -PassThru -WindowStyle Hidden
+            if ($process.ExitCode -eq 0) {
+              $output = (& wsl --status) 2>$null
+              return ($output -match 'Kernel version')
+            }
+
+            return $true
           }
           catch {
             return $false
           }
         SetScript: |
-          $kernelUrl = 'https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi'
-          $installer = Join-Path $env:TEMP 'wsl_update_x64.msi'
-
-          if (-not (Test-Path $installer)) {
-            Invoke-WebRequest -Uri $kernelUrl -OutFile $installer -UseBasicParsing
+          $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          if (-not $isAdmin) {
+            Write-Warning "WSL-Installation benötigt Administratorrechte. Schritt wird übersprungen."
+            return
           }
 
-          if (-not (Test-Path $installer)) {
-            throw "WSL-Kernel-Update konnte nicht heruntergeladen werden."
-          }
-
-          $arguments = '/i "{0}" /qn /norestart' -f $installer
-          $process   = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+          $arguments = @('--install','--no-distribution')
+          $process   = Start-Process -FilePath 'wsl.exe' -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
 
           if ($process.ExitCode -ne 0) {
-            throw "WSL-Kernel-Update schlug fehl (ExitCode: $($process.ExitCode))."
+            throw "WSL-Installation schlug fehl (ExitCode: $($process.ExitCode))."
           }
         GetScript: |
           try {
