@@ -118,185 +118,114 @@ properties:
         id: Microsoft.Azure.StorageExplorer
         source: winget
 
-    # --- Python 3.12: maschinenweit + PATH ---
+    # --- Python 3.12 über Offline-Installer ---
     - resource: PSDscResources/Script
       id: installPython312
       directives:
-        description: Installiert Python 3.12 maschinenweit
+        description: Installiert Python 3.12 (x64) offline und fügt es zum PATH hinzu
       settings:
         TestScript: |
           try {
             $pythonCmd = Get-Command python.exe -ErrorAction Stop
             $pythonExe = $pythonCmd.Source
+            $version   = (& $pythonExe --version) 2>$null
+            $isDesired = $version -match '^Python 3\.12'
+            $isMachine = $pythonExe -like 'C:\\Program Files*'
+            return ($isDesired -and $isMachine)
           }
           catch {
             return $false
           }
-
-          try {
-            $version = (& $pythonExe --version) 2>$null
-          }
-          catch {
-            return $false
-          }
-
-          $isCorrectMajor = $version -match '^Python 3\.12'
-          $isMachineInstall = $pythonExe -like 'C:\\Program Files\\*'
-
-          return ($isCorrectMajor -and $isMachineInstall)
-
         SetScript: |
-          function Ensure-Winget {
-            $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-            if ($winget) { return $true }
+          $version   = '3.12.6'
+          $fileName  = "python-$version-amd64.exe"
+          $download  = "https://www.python.org/ftp/python/$version/$fileName"
+          $installer = Join-Path $env:TEMP $fileName
 
-            $wingetUri = 'https://aka.ms/getwinget'
-            $download  = Join-Path $env:TEMP 'AppInstaller.msixbundle'
-
-            Invoke-WebRequest -Uri $wingetUri -OutFile $download -UseBasicParsing
-            Add-AppxPackage -Path $download -ForceApplicationShutdown
-
-            $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-            return [bool]$winget
+          if (-not (Test-Path $installer)) {
+            Invoke-WebRequest -Uri $download -OutFile $installer -UseBasicParsing
           }
 
-          if (-not (Ensure-Winget)) {
-            throw "Winget konnte nicht installiert werden."
+          if (-not (Test-Path $installer)) {
+            throw "Python-Installer wurde nicht erfolgreich heruntergeladen."
           }
 
-          try {
-            $updateArgs = @(
-              'source','update','msstore',
-              '--accept-source-agreements',
-              '--accept-package-agreements',
-              '--disable-interactivity'
-            )
-
-            $updateProcess = Start-Process -FilePath winget.exe -ArgumentList $updateArgs -Wait -PassThru -WindowStyle Hidden
-            if ($updateProcess.ExitCode -ne 0) {
-              Write-Warning "Winget msstore-Quelle konnte nicht aktualisiert werden (ExitCode: $($updateProcess.ExitCode))."
-            }
-          }
-          catch {
-            Write-Warning "Winget msstore-Quelle konnte nicht aktualisiert werden: $($_.Exception.Message)"
-          }
-
-          $arguments = @(
-            '--id', 'Python.Python.3.12',
-            '--source', 'winget',
-            '--silent',
-            '--disable-interactivity',
-            '--accept-package-agreements',
-            '--accept-source-agreements',
-            '--scope', 'machine',
-            '--force'
-          )
-
-          $process = Start-Process -FilePath winget.exe -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+          $arguments = '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1 Include_test=0'
+          $process   = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
 
           if ($process.ExitCode -ne 0) {
-            throw "Winget-Installation von Python 3.12 schlug fehl (ExitCode: $($process.ExitCode))"
+            throw "Python-Installation schlug fehl (ExitCode: $($process.ExitCode))."
           }
         GetScript: |
           try {
             $pythonCmd = Get-Command python.exe -ErrorAction Stop
             $pythonExe = $pythonCmd.Source
             $version   = (& $pythonExe --version) 2>$null
-
-            return @{
-              Installed = $true
-              Path       = $pythonExe
-              Version    = $version
-            }
+            return @{ Installed = $true; Path = $pythonExe; Version = $version }
           }
           catch {
             return @{ Installed = $false }
           }
 
-    # --- WSL via Winget installieren ---
-    - resource: PSDscResources/Script
-      id: installWslViaWinget
+    # --- WSL-Features aktivieren ---
+    - resource: PSDesiredStateConfiguration/WindowsOptionalFeature
+      id: enableWslFeature
       directives:
-        description: Installiert das Windows-Subsystem für Linux über Winget
+        description: Aktiviert das Windows-Subsystem für Linux
+      settings:
+        Name: Microsoft-Windows-Subsystem-Linux
+        Ensure: Present
+        NoRestart: true
+
+    - resource: PSDesiredStateConfiguration/WindowsOptionalFeature
+      id: enableVmPlatformFeature
+      directives:
+        description: Aktiviert die Virtual Machine Platform (für WSL 2)
+      settings:
+        Name: VirtualMachinePlatform
+        Ensure: Present
+        NoRestart: true
+
+    # --- WSL-Kernel aktualisieren ---
+    - resource: PSDscResources/Script
+      id: installWslKernelUpdate
+      dependsOn:
+        - enableWslFeature
+        - enableVmPlatformFeature
+      directives:
+        description: Installiert das aktuelle WSL-Kernel-Update (x64)
       settings:
         TestScript: |
           try {
-            $wslCmd = Get-Command wsl.exe -ErrorAction Stop
+            $status = (& wsl --status) 2>$null
+            return ($status -match 'Kernel version')
           }
           catch {
             return $false
           }
-
-          try {
-            $status = (& $wslCmd.Source --status) 2>$null
-          }
-          catch {
-            return $false
-          }
-
-          return ($status -match 'Kernel version')
-
         SetScript: |
-          function Ensure-Winget {
-            $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-            if ($winget) { return $true }
+          $kernelUrl = 'https://wslstorestorage.blob.core.windows.net/wslblob/wsl_update_x64.msi'
+          $installer = Join-Path $env:TEMP 'wsl_update_x64.msi'
 
-            $wingetUri = 'https://aka.ms/getwinget'
-            $download  = Join-Path $env:TEMP 'AppInstaller.msixbundle'
-
-            Invoke-WebRequest -Uri $wingetUri -OutFile $download -UseBasicParsing
-            Add-AppxPackage -Path $download -ForceApplicationShutdown
-
-            $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-            return [bool]$winget
+          if (-not (Test-Path $installer)) {
+            Invoke-WebRequest -Uri $kernelUrl -OutFile $installer -UseBasicParsing
           }
 
-          if (-not (Ensure-Winget)) {
-            throw "Winget konnte nicht installiert werden."
+          if (-not (Test-Path $installer)) {
+            throw "WSL-Kernel-Update konnte nicht heruntergeladen werden."
           }
 
-          try {
-            $updateArgs = @(
-              'source','update','msstore',
-              '--accept-source-agreements',
-              '--accept-package-agreements',
-              '--disable-interactivity'
-            )
-
-            $updateProcess = Start-Process -FilePath winget.exe -ArgumentList $updateArgs -Wait -PassThru -WindowStyle Hidden
-            if ($updateProcess.ExitCode -ne 0) {
-              Write-Warning "Winget msstore-Quelle konnte nicht aktualisiert werden (ExitCode: $($updateProcess.ExitCode))."
-            }
-          }
-          catch {
-            Write-Warning "Winget msstore-Quelle konnte nicht aktualisiert werden: $($_.Exception.Message)"
-          }
-
-          $arguments = @(
-            '--id','Microsoft.WSL',
-            '--source','winget',
-            '--silent',
-            '--disable-interactivity',
-            '--accept-package-agreements',
-            '--accept-source-agreements',
-            '--force'
-          )
-
-          $process = Start-Process -FilePath winget.exe -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+          $arguments = '/i "{0}" /qn /norestart' -f $installer
+          $process   = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
 
           if ($process.ExitCode -ne 0) {
-            throw "WSL-Installation über Winget schlug fehl (ExitCode: $($process.ExitCode))"
+            throw "WSL-Kernel-Update schlug fehl (ExitCode: $($process.ExitCode))."
           }
-
         GetScript: |
           try {
-            $wslCmd = Get-Command wsl.exe -ErrorAction Stop
-            $status = (& $wslCmd.Source --status) 2>$null
-            return @{
-              Installed = $true
-              Status    = $status
-            }
+            $status = (& wsl --status) 2>$null
+            return @{ KernelStatus = $status }
           }
           catch {
-            return @{ Installed = $false }
+            return @{ KernelStatus = 'WSL nicht verfügbar' }
           }

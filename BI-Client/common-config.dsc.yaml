@@ -3,45 +3,6 @@ properties:
   configurationVersion: 0.2.0
 
   resources:
-    # Dev Drive anlegen
-    - resource: Disk
-      id: DevDrive1
-      directives:
-        module: StorageDsc
-        allowPrerelease: true
-      settings:
-        DiskId: '0'
-        DiskIdType: 'Number'
-        DriveLetter: 'Z'
-        FSLabel: 'Dev Drive 1'
-        DevDrive: true
-        AllowDestructive: true
-        FSFormat: 'ReFS'
-        Size: '50GB'
-
-    # WinGet CLI (App Installer) sicherstellen
-    - resource: PSDscResources/Script
-      id: installWingetCli
-      directives:
-        description: Installiert bzw. aktualisiert App Installer (liefert winget.exe)
-      settings:
-        TestScript: |
-          $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -AllUsers -ErrorAction SilentlyContinue
-          if ($null -eq $package) { return $false }
-
-          $wingetPath = Join-Path $env:LocalAppData "Microsoft\WindowsApps\winget.exe"
-          return (Test-Path $wingetPath)
-        SetScript: |
-          $wingetUri = 'https://aka.ms/getwinget'
-          $download  = Join-Path $env:TEMP 'AppInstaller.msixbundle'
-
-          Invoke-WebRequest -Uri $wingetUri -OutFile $download -UseBasicParsing
-          Add-AppxPackage -Path $download -ForceApplicationShutdown
-        GetScript: |
-          $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -AllUsers -ErrorAction SilentlyContinue
-          return @{
-            Package = $package
-          }
 
     # Git for Windows installieren
     - resource: Microsoft.WinGet.DSC/WinGetPackage
