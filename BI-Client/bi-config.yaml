@@ -91,7 +91,7 @@ properties:
       directives:
         description: Install Terraform
       settings:
-        id: Hashicorp.Terraform
+        id: HashiCorp.Terraform
         source: winget
 
     - resource: Microsoft.WinGet.DSC/WinGetPackage
@@ -107,7 +107,7 @@ properties:
       directives:
         description: Install Azure Storage Explorer
       settings:
-        id: Microsoft.Azure.StorageExplorer
+        id: Microsoft.AzureStorageExplorer
         source: winget
 
     # --- Python 3.12 über Offline-Installer ---
