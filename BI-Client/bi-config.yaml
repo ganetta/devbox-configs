@@ -3,39 +3,40 @@ properties:
   configurationVersion: 0.2.0
 
   resources:
-    # --- Repo klonen (robust, fällt auf C:\ zurück, wenn Z:\ noch nicht da ist; läuft nur, wenn Git vorhanden ist) ---
-    - resource: PSDscResources/Script
-      id: cloneRepo
-      settings:
-        TestScript: |
-          # Bereits geklont?
-          if (Test-Path "Z:\workspaces\eshop\.git") { return $true }
-          if (Test-Path "C:\workspaces\eshop\.git") { return $true }
-          return $false
-        SetScript: |
-          if (Test-Path 'Z:') {
-            $repoRoot = 'Z:\workspaces'
-          }
-          else {
-            $repoRoot = 'C:\workspaces'
-          }
-          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
-            Write-Host "Git nicht gefunden; überspringe Clone in diesem Lauf."
-            return
-          }
-          if (-not (Test-Path $repoRoot)) { New-Item -ItemType Directory -Path $repoRoot -Force | Out-Null }
-          $target = Join-Path $repoRoot 'eshop'
-          if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target -Force | Out-Null }
-          if (-not (Test-Path (Join-Path $target '.git'))) {
-            git clone --quiet https://github.com/contoso-co/eshop.git $target
-          }
-        GetScript: |
-          if (Test-Path "Z:\workspaces\eshop\.git" -or Test-Path "C:\workspaces\eshop\.git") {
-            return @{ Cloned = $true }
-          }
-
-          return @{ Cloned = $false }
-
+  
+#    # --- Repo klonen (robust, fällt auf C:\ zurück, wenn Z:\ noch nicht da ist; läuft nur, wenn Git vorhanden ist) ---
+#    - resource: PSDscResources/Script
+#      id: cloneRepo
+#      settings:
+#        TestScript: |
+#          # Bereits geklont?
+#          if (Test-Path "Z:\workspaces\eshop\.git") { return $true }
+#          if (Test-Path "C:\workspaces\eshop\.git") { return $true }
+#          return $false
+#        SetScript: |
+#          if (Test-Path 'Z:') {
+#            $repoRoot = 'Z:\workspaces'
+#          }
+#          else {
+#            $repoRoot = 'C:\workspaces'
+#          }
+#          if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+#            Write-Host "Git nicht gefunden; überspringe Clone in diesem Lauf."
+#            return
+#          }
+#          if (-not (Test-Path $repoRoot)) { New-Item -ItemType Directory -Path $repoRoot -Force | Out-Null }
+#          $target = Join-Path $repoRoot 'eshop'
+#          if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target -Force | Out-Null }
+#          if (-not (Test-Path (Join-Path $target '.git'))) {
+#            git clone --quiet https://github.com/contoso-co/eshop.git $target
+#          }
+#        GetScript: |
+#          if (Test-Path "Z:\workspaces\eshop\.git" -or Test-Path "C:\workspaces\eshop\.git") {
+#            return @{ Cloned = $true }
+#          }
+#
+#          return @{ Cloned = $false }
+#
     # --- Tools & Apps über WinGet ---
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: docker
@@ -86,13 +87,35 @@ properties:
         id: Microsoft.AzureCLI
         source: winget
 
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: terraform
+    - resource: PSDscResources/Script
+      id: installChocolatey
       directives:
-        description: Install Terraform
+        description: Installiert Chocolatey (falls nicht vorhanden)
       settings:
-        id: HashiCorp.Terraform
-        source: winget
+        TestScript: |
+          return (Get-Command choco.exe -ErrorAction SilentlyContinue) -ne $null
+        SetScript: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        GetScript: |
+          $choco = Get-Command choco.exe -ErrorAction SilentlyContinue
+          return @{ ChocolateyPath = $choco?.Source }
+
+    - resource: PSDscResources/Script
+      id: installTerraform
+      dependsOn:
+        - installChocolatey
+      directives:
+        description: Installiert Terraform via Chocolatey
+      settings:
+        TestScript: |
+          return (Get-Command terraform.exe -ErrorAction SilentlyContinue) -ne $null
+        SetScript: |
+          choco install terraform --yes --no-progress --acceptlicense
+        GetScript: |
+          $exe = Get-Command terraform.exe -ErrorAction SilentlyContinue
+          return @{ Installed = [bool]$exe; Path = $exe?.Source }
 
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: datagrip
@@ -102,13 +125,19 @@ properties:
         id: JetBrains.DataGrip
         source: winget
 
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: storageexplorer
+    - resource: PSDscResources/Script
+      id: installStorageExplorer
+      dependsOn:
+        - installChocolatey
       directives:
-        description: Install Azure Storage Explorer
+        description: Installiert Azure Storage Explorer via Chocolatey
       settings:
-        id: Microsoft.AzureStorageExplorer
-        source: winget
+        TestScript: |
+          return (Test-Path 'C:\Program Files (x86)\Microsoft Azure Storage Explorer\StorageExplorer.exe')
+        SetScript: |
+          choco install azure-storage-explorer --yes --no-progress --acceptlicense
+        GetScript: |
+          return @{ Installed = Test-Path 'C:\Program Files (x86)\Microsoft Azure Storage Explorer\StorageExplorer.exe' }
 
     # --- Python 3.12 über Offline-Installer ---
     - resource: PSDscResources/Script
