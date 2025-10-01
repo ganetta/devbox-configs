@@ -87,10 +87,34 @@ properties:
         id: Microsoft.AzureCLI
         source: winget
 
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: terraform
+      directives:
+        description: Install Terraform
+      settings:
+        id: HashiCorp.Terraform
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: datagrip
+      directives:
+        description: Install JetBrains DataGrip
+      settings:
+        id: JetBrains.DataGrip
+        source: winget
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: storageexplorer
+      directives:
+        description: Install Azure Storage Explorer
+      settings:
+        id: Microsoft.AzureStorageExplorer
+        source: winget
+
     - resource: PSDscResources/Script
       id: installChocolatey
       directives:
-        description: Installiert Chocolatey (falls nicht vorhanden)
+        description: Installiert Chocolatey (für optionale Nachinstallationen)
       settings:
         TestScript: |
           return (Get-Command choco.exe -ErrorAction SilentlyContinue) -ne $null
@@ -101,43 +125,6 @@ properties:
         GetScript: |
           $choco = Get-Command choco.exe -ErrorAction SilentlyContinue
           return @{ ChocolateyPath = $choco?.Source }
-
-    - resource: PSDscResources/Script
-      id: installTerraform
-      dependsOn:
-        - installChocolatey
-      directives:
-        description: Installiert Terraform via Chocolatey
-      settings:
-        TestScript: |
-          return (Get-Command terraform.exe -ErrorAction SilentlyContinue) -ne $null
-        SetScript: |
-          choco install terraform --yes --no-progress --acceptlicense
-        GetScript: |
-          $exe = Get-Command terraform.exe -ErrorAction SilentlyContinue
-          return @{ Installed = [bool]$exe; Path = $exe?.Source }
-
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: datagrip
-      directives:
-        description: Install JetBrains DataGrip
-      settings:
-        id: JetBrains.DataGrip
-        source: winget
-
-    - resource: PSDscResources/Script
-      id: installStorageExplorer
-      dependsOn:
-        - installChocolatey
-      directives:
-        description: Installiert Azure Storage Explorer via Chocolatey
-      settings:
-        TestScript: |
-          return (Test-Path 'C:\Program Files (x86)\Microsoft Azure Storage Explorer\StorageExplorer.exe')
-        SetScript: |
-          choco install azure-storage-explorer --yes --no-progress --acceptlicense
-        GetScript: |
-          return @{ Installed = Test-Path 'C:\Program Files (x86)\Microsoft Azure Storage Explorer\StorageExplorer.exe' }
 
     # --- Python 3.12 über Offline-Installer ---
     - resource: PSDscResources/Script
