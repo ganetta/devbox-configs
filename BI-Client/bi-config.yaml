@@ -87,10 +87,26 @@ properties:
         id: Microsoft.AzureCLI
         source: winget
 
+    # --- Chocolatey installieren ---
+    - resource: PSDscResources/Script
+      id: installChocolatey
+      directives:
+        description: Installiert Chocolatey, falls noch nicht vorhanden
+      settings:
+        TestScript: |
+          return (Get-Command choco.exe -ErrorAction SilentlyContinue) -ne $null
+        SetScript: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        GetScript: |
+          $choco = Get-Command choco.exe -ErrorAction SilentlyContinue
+          return @{ ChocolateyPath = $choco?.Source }
+
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: terraform
       directives:
-        description: Install Terraform
+        description: Install Terraform (Winget)
       settings:
         id: HashiCorp.Terraform
         source: winget
@@ -101,14 +117,6 @@ properties:
         description: Install JetBrains DataGrip
       settings:
         id: JetBrains.DataGrip
-        source: winget
-
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: storageexplorer
-      directives:
-        description: Install Azure Storage Explorer
-      settings:
-        id: Microsoft.AzureStorageExplorer
         source: winget
 
     - resource: PSDscResources/Script
@@ -129,41 +137,19 @@ properties:
     # --- Python 3.12 über Offline-Installer ---
     - resource: PSDscResources/Script
       id: installPython312
+      dependsOn:
+        - installChocolatey
       directives:
-        description: Installiert Python 3.12 (x64) offline und fügt es zum PATH hinzu
+        description: Installiert Python 3.12 (x64) über Chocolatey (systemweit)
       settings:
         TestScript: |
-          try {
-            $pythonCmd = Get-Command python.exe -ErrorAction Stop
-            $pythonExe = $pythonCmd.Source
-            $version   = (& $pythonExe --version) 2>$null
-            $isDesired = $version -match '^Python 3\.12'
-            $isMachine = $pythonExe -like 'C:\\Program Files*'
-            return ($isDesired -and $isMachine)
-          }
-          catch {
-            return $false
-          }
+          $pythonCmd = Get-Command python.exe -ErrorAction SilentlyContinue
+          if (-not $pythonCmd) { return $false }
+
+          $version = (& $pythonCmd.Source --version) 2>$null
+          return ($version -match '^Python 3\.12')
         SetScript: |
-          $version   = '3.12.6'
-          $fileName  = "python-$version-amd64.exe"
-          $download  = "https://www.python.org/ftp/python/$version/$fileName"
-          $installer = Join-Path $env:TEMP $fileName
-
-          if (-not (Test-Path $installer)) {
-            Invoke-WebRequest -Uri $download -OutFile $installer -UseBasicParsing
-          }
-
-          if (-not (Test-Path $installer)) {
-            throw "Python-Installer wurde nicht erfolgreich heruntergeladen."
-          }
-
-          $arguments = '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1 Include_test=0'
-          $process   = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
-
-          if ($process.ExitCode -ne 0) {
-            throw "Python-Installation schlug fehl (ExitCode: $($process.ExitCode))."
-          }
+          choco install python --version 3.12.6 --yes --no-progress --acceptlicense
         GetScript: |
           try {
             $pythonCmd = Get-Command python.exe -ErrorAction Stop
