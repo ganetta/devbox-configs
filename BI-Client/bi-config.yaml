@@ -37,12 +37,60 @@ properties:
 #
 #          return @{ Cloned = $false }
 #
+    # --- WSL installieren ---
+    - resource: PSDscResources/Script
+      id: installWsl
+      directives:
+        description: Installiert WSL (Subsystem + Kernel) über wsl --install
+      settings:
+        TestScript: |
+          try {
+            $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+            $vmFeature  = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
+            if ($wslFeature.State -ne 'Enabled' -or $vmFeature.State -ne 'Enabled') {
+              return $false
+            }
+
+            $process = Start-Process -FilePath 'wsl.exe' -ArgumentList '--status' -Wait -PassThru -WindowStyle Hidden
+            if ($process.ExitCode -eq 0) {
+              $output = (& wsl --status) 2>$null
+              return ($output -match 'Kernel version')
+            }
+
+            return $true
+          }
+          catch {
+            return $false
+          }
+        SetScript: |
+          $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          if (-not $isAdmin) {
+            Write-Warning "WSL-Installation benötigt Administratorrechte. Schritt wird übersprungen."
+            return
+          }
+
+          $arguments = @('--install','--no-distribution')
+          $process   = Start-Process -FilePath 'wsl.exe' -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+
+          if ($process.ExitCode -ne 0) {
+            throw "WSL-Installation schlug fehl (ExitCode: $($process.ExitCode))."
+          }
+        GetScript: |
+          try {
+            $status = (& wsl --status) 2>$null
+            return @{ KernelStatus = $status }
+          }
+          catch {
+            return @{ KernelStatus = 'WSL nicht verfügbar' }
+          }
+
     # --- Tools & Apps über WinGet ---
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: docker
+      dependsOn:
+        - installWsl
       directives:
         description: Install Docker Desktop
-        allowPrerelease: true
       settings:
         id: Docker.DockerDesktop
         source: winget
@@ -103,40 +151,65 @@ properties:
           $choco = Get-Command choco.exe -ErrorAction SilentlyContinue
           return @{ ChocolateyPath = $choco?.Source }
 
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: terraform
-      directives:
-        description: Install Terraform (Winget)
-      settings:
-        id: HashiCorp.Terraform
-        source: winget
+    # - resource: Microsoft.WinGet.DSC/WinGetPackage
+    #   id: terraform
+    #   directives:
+    #     description: Install Terraform (Winget)
+    #   settings:
+    #     id: HashiCorp.Terraform
+    #     source: winget
 
-    - resource: Microsoft.WinGet.DSC/WinGetPackage
-      id: datagrip
-      directives:
-        description: Install JetBrains DataGrip
-      settings:
-        id: JetBrains.DataGrip
-        source: winget
+    # - resource: Microsoft.WinGet.DSC/WinGetPackage
+    #   id: datagrip
+    #   directives:
+    #     description: Install JetBrains DataGrip
+    #   settings:
+    #     id: JetBrains.DataGrip
+    #     source: winget
 
+    # --- Terraform über Chocolatey ---
     - resource: PSDscResources/Script
-      id: installChocolatey
+      id: installTerraformChoco
+      dependsOn:
+        - installChocolatey
       directives:
-        description: Installiert Chocolatey (für optionale Nachinstallationen)
+        description: Installiert Terraform über Chocolatey (systemweit)
       settings:
         TestScript: |
-          return (Get-Command choco.exe -ErrorAction SilentlyContinue) -ne $null
+          $terraformCmd = Get-Command terraform.exe -ErrorAction SilentlyContinue
+          return [bool]$terraformCmd
         SetScript: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          choco upgrade terraform --yes --no-progress --acceptlicense
         GetScript: |
-          $choco = Get-Command choco.exe -ErrorAction SilentlyContinue
-          return @{ ChocolateyPath = $choco?.Source }
+          try {
+            $terraformCmd = Get-Command terraform.exe -ErrorAction Stop
+            $version = (& $terraformCmd.Source --version) 2>$null | Select-Object -First 1
+            return @{ Installed = $true; Path = $terraformCmd.Source; Version = $version }
+          }
+          catch {
+            return @{ Installed = $false }
+          }
 
-    # --- Python 3.12 über Offline-Installer ---
+    # --- DataGrip über Chocolatey ---
     - resource: PSDscResources/Script
-      id: installPython312
+      id: installDataGripChoco
+      dependsOn:
+        - installChocolatey
+      directives:
+        description: Installiert JetBrains DataGrip über Chocolatey (systemweit)
+      settings:
+        TestScript: |
+          $dgPath = Get-ChildItem 'C:\Program Files\JetBrains\DataGrip*\bin\datagrip64.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          return [bool]$dgPath
+        SetScript: |
+          choco upgrade datagrip --yes --no-progress --acceptlicense
+        GetScript: |
+          $dgPath = Get-ChildItem 'C:\Program Files\JetBrains\DataGrip*\bin\datagrip64.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          return @{ Installed = [bool]$dgPath; Path = if ($dgPath) { $dgPath.FullName } else { $null } }
+
+    # --- Python 3.12 über Chocolatey ---
+    - resource: PSDscResources/Script
+      id: installPython312Choco
       dependsOn:
         - installChocolatey
       directives:
@@ -149,7 +222,7 @@ properties:
           $version = (& $pythonCmd.Source --version) 2>$null
           return ($version -match '^Python 3\.12')
         SetScript: |
-          choco install python --version 3.12.6 --yes --no-progress --acceptlicense
+          choco upgrade python --version 3.12.6 --yes --no-progress --acceptlicense
         GetScript: |
           try {
             $pythonCmd = Get-Command python.exe -ErrorAction Stop
@@ -161,90 +234,20 @@ properties:
             return @{ Installed = $false }
           }
 
-    # --- DBeaver Community über Offline-Installer ---
+    # --- DBeaver über Chocolatey ---
     - resource: PSDscResources/Script
-      id: installDBeaver
+      id: installDBeaverChoco
+      dependsOn:
+        - installChocolatey
       directives:
-        description: Installiert DBeaver Community Edition (silent)
+        description: Installiert DBeaver Community Edition über Chocolatey (systemweit)
       settings:
         TestScript: |
           $exe = Get-Command 'C:\Program Files\DBeaver\dbeaver.exe' -ErrorAction SilentlyContinue
           return [bool]$exe
         SetScript: |
-          $ErrorActionPreference = 'Stop'
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-          $temp      = Join-Path $env:TEMP 'DBeaverSetup'
-          if (-not (Test-Path $temp)) { New-Item -ItemType Directory -Path $temp -Force | Out-Null }
-
-          $installer = Join-Path $temp 'dbeaver-setup.exe'
-          $url       = 'https://dbeaver.io/files/dbeaver-ce-latest-x86_64-setup.exe'
-
-          if (Test-Path $installer) { Remove-Item $installer -Force }
-          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-
-          if (-not (Test-Path $installer)) {
-            throw "DBeaver-Installer konnte nicht heruntergeladen werden."
-          }
-
-          $size = (Get-Item $installer).Length
-          if ($size -lt 1048576) {
-            throw "DBeaver-Installer ist zu klein/ungültig (Größe: $size Bytes)."
-          }
-
-          
-          $arguments  = @('/S','/allusers')
-          $process    = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+          choco upgrade dbeaver --yes --no-progress --acceptlicense
         GetScript: |
           $exe = Get-Command 'C:\Program Files\DBeaver\dbeaver.exe' -ErrorAction SilentlyContinue
-          return @{
-            Installed = [bool]$exe
-            Path       = if ($exe) { $exe.Source } else { $null }
-          }
+          return @{ Installed = [bool]$exe; Path = if ($exe) { $exe.Source } else { $null } }
 
-    # --- WSL installieren ---
-    - resource: PSDscResources/Script
-      id: installWsl
-      directives:
-        description: Installiert WSL (Subsystem + Kernel) über wsl --install
-      settings:
-        TestScript: |
-          try {
-            $wslFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
-            $vmFeature  = Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform
-            if ($wslFeature.State -ne 'Enabled' -or $vmFeature.State -ne 'Enabled') {
-              return $false
-            }
-
-            $process = Start-Process -FilePath 'wsl.exe' -ArgumentList '--status' -Wait -PassThru -WindowStyle Hidden
-            if ($process.ExitCode -eq 0) {
-              $output = (& wsl --status) 2>$null
-              return ($output -match 'Kernel version')
-            }
-
-            return $true
-          }
-          catch {
-            return $false
-          }
-        SetScript: |
-          $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-          if (-not $isAdmin) {
-            Write-Warning "WSL-Installation benötigt Administratorrechte. Schritt wird übersprungen."
-            return
-          }
-
-          $arguments = @('--install','--no-distribution')
-          $process   = Start-Process -FilePath 'wsl.exe' -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
-
-          if ($process.ExitCode -ne 0) {
-            throw "WSL-Installation schlug fehl (ExitCode: $($process.ExitCode))."
-          }
-        GetScript: |
-          try {
-            $status = (& wsl --status) 2>$null
-            return @{ KernelStatus = $status }
-          }
-          catch {
-            return @{ KernelStatus = 'WSL nicht verfügbar' }
-          }

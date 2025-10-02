@@ -8,7 +8,7 @@ properties:
     - resource: Microsoft.WinGet.DSC/WinGetPackage
       id: git
       directives:
-        allowPrerelease: true
+        description: Install Git for Windows
       settings:
         id: Git.Git
         source: winget
